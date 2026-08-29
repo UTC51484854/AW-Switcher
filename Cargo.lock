@@ -48,9 +48,14 @@ name = "aw-switcher"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "core-foundation",
+ "core-foundation-sys",
+ "core-graphics 0.24.0",
  "ddc-hi",
  "dirs",
  "global-hotkey",
+ "io-kit-sys",
+ "mach2",
  "serde",
  "tao",
  "toml 1.1.4+spec-1.1.0",

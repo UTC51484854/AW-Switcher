@@ -1,10 +1,5 @@
-mod config;
-mod icon;
-mod monitor;
-
-use config::Config;
+use aw_switcher::{config::Config, icon, monitor::Monitor};
 use global_hotkey::{hotkey::HotKey, GlobalHotKeyEvent, GlobalHotKeyManager};
-use monitor::Monitor;
 use tao::event::Event;
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tray_icon::{

@@ -14,3 +14,13 @@ serde = { version = "1.0.229", features = ["derive"] }
 tao = "0.37.0"
 toml = "1.1.4"
 tray-icon = "0.24.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10.1"
+core-foundation-sys = "0.8.7"
+# Pinned to match ddc-hi's own ddc-macos dependency exactly: ddc_macos::Monitor::handle()
+# returns a core_graphics::display::CGDisplay, and a different crate version would be a
+# distinct, incompatible Rust type even though it's structurally the same C type.
+core-graphics = "=0.24.0"
+io-kit-sys = "0.4.1"
+mach2 = "0.4.3"

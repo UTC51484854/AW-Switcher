@@ -1,7 +1,9 @@
 use std::{thread, time::Duration};
 
 use anyhow::{bail, Context, Result};
-use ddc_hi::{Ddc, Display};
+#[cfg(not(target_os = "macos"))]
+use ddc_hi::Ddc;
+use ddc_hi::Display;
 
 /// VCP feature code for "Input Source" (MCCS 0x60).
 const INPUT_SOURCE: u8 = 0x60;
@@ -88,11 +90,31 @@ impl Monitor {
             .unwrap_or_else(|| self.display.info.id.clone())
     }
 
+    #[cfg(target_os = "macos")]
+    #[allow(unreachable_patterns)] // Handle has exactly one variant enabled on macOS
+    fn cg_display(&self) -> Result<core_graphics::display::CGDisplay> {
+        match &self.display.handle {
+            ddc_hi::Handle::MacOS(m) => Ok(m.handle()),
+            _ => bail!("expected a macOS display handle"),
+        }
+    }
+
     /// Reads the current input source (VCP 0x60) value.
     ///
-    /// MCCS defines Input Source as a one-byte value carried in the low byte
-    /// (`sl`) of the reply; some monitors put garbage (often a copy of `sl`)
-    /// in the high byte (`sh`), so it must be ignored rather than combined in.
+    /// MCCS defines Input Source as a one-byte value; some monitors put
+    /// garbage (often a copy of the low byte) in the reply's high byte, so
+    /// that byte is ignored rather than combined in.
+    #[cfg(target_os = "macos")]
+    pub fn current_input(&mut self) -> Result<u16> {
+        let cg = self.cg_display()?;
+        with_retries(|| {
+            crate::macos_ddc::get_vcp_feature(cg, INPUT_SOURCE)
+                .map(|v| v as u16)
+                .context("Failed to read the current input source over DDC/CI")
+        })
+    }
+
+    #[cfg(not(target_os = "macos"))]
     pub fn current_input(&mut self) -> Result<u16> {
         let display = &mut self.display;
         with_retries(|| {
@@ -105,6 +127,18 @@ impl Monitor {
     }
 
     /// Sets the input source (VCP 0x60) to the given value.
+    #[cfg(target_os = "macos")]
+    pub fn set_input(&mut self, code: u16) -> Result<()> {
+        let cg = self.cg_display()?;
+        with_retries(|| {
+            crate::macos_ddc::set_vcp_feature(cg, INPUT_SOURCE, code as u8)
+                .context("Failed to set the input source over DDC/CI")
+        })?;
+        thread::sleep(Duration::from_millis(POST_SET_SETTLE_MS));
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "macos"))]
     pub fn set_input(&mut self, code: u16) -> Result<()> {
         let display = &mut self.display;
         with_retries(|| {

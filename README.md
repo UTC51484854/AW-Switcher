@@ -84,11 +84,13 @@ changes without restarting.
 
 ## Troubleshooting
 
-Run `cargo run --example probe` for a read-only dump of a connected
-monitor's raw VCP `0x60` value and its full DDC/CI capabilities string
-(look for a `60(...)` segment listing the input codes it actually
-supports — that's ground truth over any guessed defaults). It won't
-switch your input.
+Run `cargo run --example probe` for a read-only check of a connected
+monitor's current VCP `0x60` value (plus, for reference, `ddc-hi`'s raw
+capabilities string — see the macOS caveat below on why that part may
+fail even when everything else works). `cargo run --example probe_write`
+additionally does a safe write: it sets the input to whatever it's
+already on, a no-op from the monitor's perspective, to confirm writes are
+reaching it without actually switching anything.
 
 If clicking an input in the tray does nothing visible:
 
@@ -106,8 +108,20 @@ If clicking an input in the tray does nothing visible:
 
 ## How it works
 
-- [`ddc-hi`](https://docs.rs/ddc-hi) talks DDC/CI to the monitor (via
-  IOKit on macOS, the Monitor Configuration API on Windows).
+- On Windows, [`ddc-hi`](https://docs.rs/ddc-hi) talks DDC/CI via the
+  Monitor Configuration API.
+- On macOS, DDC/CI goes through this project's own [`macos_ddc`
+  module](src/macos_ddc.rs) instead of `ddc-hi`'s built-in macOS backend
+  (the `ddc-macos` crate). On at least one real setup (Apple Silicon,
+  a directly-connected AW3926QW), `ddc-macos` finds the display fine but
+  its reads/writes are silently wrong — it requests too few bytes from
+  `IOAVServiceReadI2C` and uses the wrong I2C offset for both operations.
+  [`m1ddc`](https://github.com/waydabber/m1ddc) (same author as
+  BetterDisplay) uses different parameters that work reliably on the same
+  hardware; `macos_ddc.rs` ports that exact recipe (MIT-licensed, like the
+  crate it replaces). `ddc-hi` is still used for enumerating/matching
+  displays by name on macOS — only the actual VCP get/set calls are
+  replaced.
 - [`global-hotkey`](https://docs.rs/global-hotkey) and
   [`tray-icon`](https://docs.rs/tray-icon) (both from the Tauri project)
   provide the cross-platform hotkey and tray icon/menu.
