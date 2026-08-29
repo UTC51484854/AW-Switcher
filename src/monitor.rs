@@ -63,13 +63,17 @@ impl Monitor {
     }
 
     /// Reads the current input source (VCP 0x60) value.
+    ///
+    /// MCCS defines Input Source as a one-byte value carried in the low byte
+    /// (`sl`) of the reply; some monitors put garbage (often a copy of `sl`)
+    /// in the high byte (`sh`), so it must be ignored rather than combined in.
     pub fn current_input(&mut self) -> Result<u16> {
         let value = self
             .display
             .handle
             .get_vcp_feature(INPUT_SOURCE)
             .context("Failed to read the current input source over DDC/CI")?;
-        Ok(((value.sh as u16) << 8) | value.sl as u16)
+        Ok(value.sl as u16)
     }
 
     /// Sets the input source (VCP 0x60) to the given value.

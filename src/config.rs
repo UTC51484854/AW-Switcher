@@ -28,11 +28,13 @@ impl Default for Config {
         Config {
             hotkey: "CmdOrCtrl+Alt+I".into(),
             monitor_match: "AW3926".into(),
+            // The AW3926QW has 2x HDMI, 1x DisplayPort 2.1, and 1x USB-C
+            // (10Gbps upstream, DisplayPort 2.1 Alt Mode) — no second
+            // DisplayPort input.
             inputs: vec![
                 InputSource { name: "HDMI 1".into(), code: 0x11 },
                 InputSource { name: "HDMI 2".into(), code: 0x12 },
-                InputSource { name: "DisplayPort 1".into(), code: 0x0f },
-                InputSource { name: "DisplayPort 2".into(), code: 0x10 },
+                InputSource { name: "DisplayPort".into(), code: 0x0f },
                 // Dell's vendor-specific code for "DisplayPort over USB-C" on
                 // other Dell/Alienware monitors (e.g. the U3818DW). Not yet
                 // confirmed against the AW3926QW specifically — if switching

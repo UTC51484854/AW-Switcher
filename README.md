@@ -47,17 +47,16 @@ name = "HDMI 2"
 code = 0x12
 
 [[inputs]]
-name = "DisplayPort 1"
+name = "DisplayPort"
 code = 0x0f
-
-[[inputs]]
-name = "DisplayPort 2"
-code = 0x10
 
 [[inputs]]
 name = "USB-C"
 code = 0x1b
 ```
+
+The defaults above match the AW3926QW's actual ports: 2x HDMI, 1x
+DisplayPort 2.1, and 1x USB-C (10Gbps upstream, DisplayPort 2.1 Alt Mode).
 
 - **`hotkey`** — the global shortcut that cycles to the *next* input in the
   `inputs` list. Format is `Modifier+Modifier+Key`, e.g. `Shift+Alt+KeyD`,
