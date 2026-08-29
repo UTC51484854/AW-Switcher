@@ -33,6 +33,11 @@ impl Default for Config {
                 InputSource { name: "HDMI 2".into(), code: 0x12 },
                 InputSource { name: "DisplayPort 1".into(), code: 0x0f },
                 InputSource { name: "DisplayPort 2".into(), code: 0x10 },
+                // Dell's vendor-specific code for "DisplayPort over USB-C" on
+                // other Dell/Alienware monitors (e.g. the U3818DW). Not yet
+                // confirmed against the AW3926QW specifically — if switching
+                // to it does nothing, check `ddcutil capabilities` and adjust.
+                InputSource { name: "USB-C".into(), code: 0x1b },
             ],
         }
     }

@@ -53,6 +53,10 @@ code = 0x0f
 [[inputs]]
 name = "DisplayPort 2"
 code = 0x10
+
+[[inputs]]
+name = "USB-C"
+code = 0x1b
 ```
 
 - **`hotkey`** — the global shortcut that cycles to the *next* input in the
@@ -67,9 +71,11 @@ code = 0x10
 - **`inputs`** — the list you cycle through with the hotkey, and that shows
   up (with a checkmark on the active one) in the tray menu for switching
   directly. `code` is the VCP `0x60` input value; standard MCCS values are
-  `0x0f`/`0x10` for DisplayPort 1/2 and `0x11`/`0x12` for HDMI 1/2, but some
-  monitors use vendor-specific codes (e.g. for USB-C). If a code doesn't
-  work, query the monitor's capabilities string with
+  `0x0f`/`0x10` for DisplayPort 1/2 and `0x11`/`0x12` for HDMI 1/2. `0x1b`
+  is included by default for USB-C, a vendor-specific Dell code seen on
+  other Dell/Alienware monitors (e.g. the U3818DW) for "DisplayPort over
+  USB-C" — it is **not yet confirmed** against the AW3926QW specifically.
+  If a code doesn't work, query the monitor's capabilities string with
   [`ddcutil capabilities`](https://www.ddcutil.com/) (Linux) or a tool like
   [BetterDisplay](https://github.com/waydabber/BetterDisplay) (macOS) to see
   what it actually advertises for feature `60`.
