@@ -82,6 +82,28 @@ DisplayPort 2.1, and 1x USB-C (10Gbps upstream, DisplayPort 2.1 Alt Mode).
 Use the tray menu's **Reload Config & Rescan Monitor** item to pick up
 changes without restarting.
 
+## Troubleshooting
+
+Run `cargo run --example probe` for a read-only dump of a connected
+monitor's raw VCP `0x60` value and its full DDC/CI capabilities string
+(look for a `60(...)` segment listing the input codes it actually
+supports — that's ground truth over any guessed defaults). It won't
+switch your input.
+
+If clicking an input in the tray does nothing visible:
+
+- **Nothing is connected to that input.** DDC/CI switches happily even to
+  a port with no signal; many monitors then show "no signal" briefly and
+  auto-revert to the last input that had one, which looks identical to
+  the switch not having happened at all.
+- **DDC/CI is flaky by nature.** A dropped or truncated reply on an
+  otherwise-working link is normal; this app retries reads/writes a few
+  times with backoff, but if your setup (an active docking station/hub in
+  particular) is especially lossy, that may not be enough.
+- **Another DDC tool is running.** Two programs (e.g. this and
+  BetterDisplay/MonitorControl) polling or writing DDC/CI at once can
+  collide; try quitting the other one.
+
 ## How it works
 
 - [`ddc-hi`](https://docs.rs/ddc-hi) talks DDC/CI to the monitor (via

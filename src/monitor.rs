@@ -1,8 +1,34 @@
+use std::{thread, time::Duration};
+
 use anyhow::{bail, Context, Result};
 use ddc_hi::{Ddc, Display};
 
 /// VCP feature code for "Input Source" (MCCS 0x60).
 const INPUT_SOURCE: u8 = 0x60;
+
+/// DDC/CI over a real display link is flaky: a single command dropping a
+/// byte or getting a truncated reply is normal and expected, not exceptional.
+const RETRY_ATTEMPTS: u32 = 5;
+const RETRY_BASE_DELAY_MS: u64 = 60;
+
+/// After a SET command, give the monitor's control board time to act on it
+/// before issuing another DDC/CI command; firing one immediately after
+/// another is a common cause of the next command failing or being ignored.
+const POST_SET_SETTLE_MS: u64 = 250;
+
+fn with_retries<T>(mut f: impl FnMut() -> Result<T>) -> Result<T> {
+    let mut last_err = None;
+    for attempt in 0..RETRY_ATTEMPTS {
+        match f() {
+            Ok(v) => return Ok(v),
+            Err(e) => {
+                last_err = Some(e);
+                thread::sleep(Duration::from_millis(RETRY_BASE_DELAY_MS * (attempt as u64 + 1)));
+            }
+        }
+    }
+    Err(last_err.unwrap())
+}
 
 pub struct Monitor {
     display: Display,
@@ -68,19 +94,28 @@ impl Monitor {
     /// (`sl`) of the reply; some monitors put garbage (often a copy of `sl`)
     /// in the high byte (`sh`), so it must be ignored rather than combined in.
     pub fn current_input(&mut self) -> Result<u16> {
-        let value = self
-            .display
-            .handle
-            .get_vcp_feature(INPUT_SOURCE)
-            .context("Failed to read the current input source over DDC/CI")?;
-        Ok(value.sl as u16)
+        let display = &mut self.display;
+        with_retries(|| {
+            display
+                .handle
+                .get_vcp_feature(INPUT_SOURCE)
+                .map(|v| v.sl as u16)
+                .context("Failed to read the current input source over DDC/CI")
+        })
     }
 
     /// Sets the input source (VCP 0x60) to the given value.
     pub fn set_input(&mut self, code: u16) -> Result<()> {
-        self.display
-            .handle
-            .set_vcp_feature(INPUT_SOURCE, code)
-            .context("Failed to set the input source over DDC/CI")
+        let display = &mut self.display;
+        with_retries(|| {
+            display
+                .handle
+                .set_vcp_feature(INPUT_SOURCE, code)
+                .context("Failed to set the input source over DDC/CI")
+        })?;
+        // Give the monitor time to act on the switch before any follow-up
+        // DDC/CI command (e.g. the status read right after this call).
+        thread::sleep(Duration::from_millis(POST_SET_SETTLE_MS));
+        Ok(())
     }
 }
