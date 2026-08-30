@@ -183,15 +183,36 @@ fn find_transport(display: CGDisplay) -> Result<Transport> {
     bail!("could not find an IOAVService for this display")
 }
 
-fn checksum(bytes: &[u8]) -> u8 {
+/// Checksum for a GET-VCP-FEATURE request, matching m1ddc's `prepareDDCRead`.
+fn read_request_checksum(bytes: &[u8]) -> u8 {
     bytes.iter().fold(DDC_DEST_SUB_ADDRESS, |acc, &b| acc ^ b)
 }
 
+/// Checksum for a SET-VCP-FEATURE request, matching m1ddc's
+/// `prepareDDCWrite`. Unlike the read-request checksum above, this also
+/// XORs in `INPUT_ADDR`; omitting it produces a checksum the monitor's
+/// DDC/CI controller silently rejects — `IOAVServiceWriteI2C` still reports
+/// success (it's only acking the I2C transport, not validating DDC/CI
+/// framing), so a write with this term missing looks like it worked but has
+/// no effect at all.
+fn write_request_checksum(bytes: &[u8]) -> u8 {
+    bytes
+        .iter()
+        .fold(DDC_DEST_SUB_ADDRESS ^ INPUT_ADDR as u8, |acc, &b| acc ^ b)
+}
+
+/// Sends the write up to `WRITE_ATTEMPTS` times, matching m1ddc's
+/// `performDDCWriteAtChipAddress`: it only stops early on failure. On
+/// success it always sends the full attempt count — some monitors
+/// (including this project's test AW3926QW) silently ignore a single write
+/// and only actually switch input on the second one, even though
+/// `IOAVServiceWriteI2C` reports success (that's only an I2C-transport ack,
+/// not confirmation the monitor acted on it) for the first write too.
 fn write_ddc(transport: &Transport, payload: &[u8]) -> Result<()> {
-    let mut last_err = 0;
+    let mut ret = 0;
     for _ in 0..WRITE_ATTEMPTS {
         thread::sleep(WRITE_WAIT);
-        let ret = unsafe {
+        ret = unsafe {
             IOAVServiceWriteI2C(
                 transport.service,
                 transport.chip_address,
@@ -200,12 +221,14 @@ fn write_ddc(transport: &Transport, payload: &[u8]) -> Result<()> {
                 payload.len() as u32,
             )
         };
-        if ret == 0 {
-            return Ok(());
+        if ret != 0 {
+            break;
         }
-        last_err = ret;
     }
-    bail!("IOAVServiceWriteI2C failed (status {last_err})");
+    if ret != 0 {
+        bail!("IOAVServiceWriteI2C failed (status {ret})");
+    }
+    Ok(())
 }
 
 fn read_ddc(transport: &Transport) -> Result<[u8; READ_BUF_LEN]> {
@@ -234,7 +257,7 @@ pub fn get_vcp_feature(display: CGDisplay, code: u8) -> Result<u8> {
     let transport = find_transport(display)?;
     let request = [0x82, 0x01, code, 0];
     let mut request = request;
-    request[3] = checksum(&request[..3]);
+    request[3] = read_request_checksum(&request[..3]);
     write_ddc(&transport, &request)?;
     let reply = read_ddc(&transport)?;
     Ok(reply[9])
@@ -244,6 +267,6 @@ pub fn set_vcp_feature(display: CGDisplay, code: u8, value: u8) -> Result<()> {
     let transport = find_transport(display)?;
     let mut request = [0x84, 0x03, code, 0, value, 0];
     request[3] = 0;
-    request[5] = checksum(&request[..5]);
+    request[5] = write_request_checksum(&request[..5]);
     write_ddc(&transport, &request)
 }

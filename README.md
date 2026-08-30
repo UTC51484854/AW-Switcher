@@ -87,10 +87,15 @@ changes without restarting.
 Run `cargo run --example probe` for a read-only check of a connected
 monitor's current VCP `0x60` value (plus, for reference, `ddc-hi`'s raw
 capabilities string — see the macOS caveat below on why that part may
-fail even when everything else works). `cargo run --example probe_write`
-additionally does a safe write: it sets the input to whatever it's
-already on, a no-op from the monitor's perspective, to confirm writes are
-reaching it without actually switching anything.
+fail even when everything else works).
+
+`cargo run --example probe_switch` does a real, verifiable round trip: it
+switches to a different input, confirms via DDC that it actually changed,
+then switches back. **This will briefly interrupt your display** — a
+self-set (setting an input to the value it's already on) can't tell you
+whether writes actually work, since the before/after read matches either
+way regardless of whether the write did anything; this is the only way
+to know for sure.
 
 If clicking an input in the tray does nothing visible:
 
@@ -114,14 +119,19 @@ If clicking an input in the tray does nothing visible:
   module](src/macos_ddc.rs) instead of `ddc-hi`'s built-in macOS backend
   (the `ddc-macos` crate). On at least one real setup (Apple Silicon,
   a directly-connected AW3926QW), `ddc-macos` finds the display fine but
-  its reads/writes are silently wrong — it requests too few bytes from
-  `IOAVServiceReadI2C` and uses the wrong I2C offset for both operations.
-  [`m1ddc`](https://github.com/waydabber/m1ddc) (same author as
-  BetterDisplay) uses different parameters that work reliably on the same
-  hardware; `macos_ddc.rs` ports that exact recipe (MIT-licensed, like the
-  crate it replaces). `ddc-hi` is still used for enumerating/matching
-  displays by name on macOS — only the actual VCP get/set calls are
-  replaced.
+  its reads/writes are silently wrong in a few ways: it requests too few
+  bytes from `IOAVServiceReadI2C`, uses the wrong I2C offset for both
+  read and write, and never sends a write more than once — which,
+  combined, means reads come back malformed and writes report success
+  over the transport while the monitor's DDC/CI controller quietly
+  ignores them (bad checksum) or never latches the change (needs a
+  second write). [`m1ddc`](https://github.com/waydabber/m1ddc) (same
+  author as BetterDisplay) gets all of this right and reads/writes
+  reliably on the same hardware; `macos_ddc.rs` ports that exact recipe
+  (MIT-licensed, like the crate it replaces), verified against the real
+  monitor with an actual input switch, not just a self-set. `ddc-hi` is
+  still used for enumerating/matching displays by name on macOS — only
+  the actual VCP get/set calls are replaced.
 - [`global-hotkey`](https://docs.rs/global-hotkey) and
   [`tray-icon`](https://docs.rs/tray-icon) (both from the Tauri project)
   provide the cross-platform hotkey and tray icon/menu.
