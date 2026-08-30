@@ -11,12 +11,30 @@ Runs on macOS and Windows from one codebase.
 
 Requires the [Rust toolchain](https://rustup.rs).
 
+### macOS
+
+```bash
+./scripts/package-macos.sh
+```
+
+Builds a release binary and wraps it in `target/release/AW Switcher.app` —
+a normal double-clickable app, not something that needs a terminal open.
+Drag it to `/Applications`. Since it isn't notarized by an Apple Developer
+ID, the first launch needs a right-click → **Open** (plain double-click
+gets a flat refusal from Gatekeeper the first time only). To have it start
+automatically: **System Settings → General → Login Items**, add it there.
+
+It's a menu-bar-only app — no Dock icon, nothing in Cmd+Tab; look for the
+small monitor icon in the menu bar.
+
+### Windows / manual build
+
 ```bash
 cargo build --release
 ```
 
-The binary is at `target/release/aw-switcher` (`aw-switcher.exe` on Windows).
-Run it and a small monitor icon appears in your menu bar / system tray.
+The binary is at `target/release/aw-switcher` (`aw-switcher.exe` on
+Windows). Run it and a small monitor icon appears in your system tray.
 
 On first launch it writes a default config file and tries to auto-detect
 your monitor.

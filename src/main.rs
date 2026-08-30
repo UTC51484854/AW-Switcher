@@ -2,6 +2,8 @@ use aw_switcher::{config::Config, icon, monitor::Monitor};
 use global_hotkey::{hotkey::HotKey, GlobalHotKeyEvent, GlobalHotKeyManager};
 use tao::event::Event;
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
+#[cfg(target_os = "macos")]
+use tao::platform::macos::{ActivationPolicy, EventLoopExtMacOS};
 use tray_icon::{
     menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem},
     TrayIcon, TrayIconBuilder, TrayIconEvent,
@@ -91,7 +93,13 @@ fn register_hotkey(manager: &GlobalHotKeyManager, previous: &mut Option<HotKey>,
 }
 
 fn main() {
-    let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
+    #[allow(unused_mut)]
+    let mut event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
+    // A menu-bar-only app: no Dock icon, no Cmd+Tab entry. Info.plist's
+    // LSUIElement has no effect on tao's own activation policy, which
+    // defaults to Regular regardless — this call is what actually matters.
+    #[cfg(target_os = "macos")]
+    event_loop.set_activation_policy(ActivationPolicy::Accessory);
 
     let proxy = event_loop.create_proxy();
     let tray_proxy = proxy.clone();
