@@ -1,11 +1,19 @@
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 use aw_switcher::{config::Config, icon, monitor::Monitor};
-use global_hotkey::{hotkey::HotKey, GlobalHotKeyEvent, GlobalHotKeyManager};
-use tao::event::Event;
+use global_hotkey::{
+    hotkey::{Code, HotKey, Modifiers},
+    GlobalHotKeyEvent, GlobalHotKeyManager,
+};
+use tao::dpi::LogicalSize;
+use tao::event::{ElementState, Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
+use tao::keyboard::{KeyCode, ModifiersState};
 #[cfg(target_os = "macos")]
 use tao::platform::macos::{ActivationPolicy, EventLoopExtMacOS};
+use tao::window::{Window, WindowBuilder};
 use tray_icon::{
-    menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem},
+    menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu},
     TrayIcon, TrayIconBuilder, TrayIconEvent,
 };
 
@@ -43,6 +51,22 @@ fn build_menu(config: &Config, current: Option<u16>, monitor_error: Option<&str>
     }
 
     let _ = menu.append(&PredefinedMenuItem::separator());
+    let cycle_menu = Submenu::new("Cycle Inputs", true);
+    for (index, input) in config.inputs.iter().enumerate() {
+        let item = CheckMenuItem::with_id(format!("toggle:{index}"), &input.name, true, input.enabled, None);
+        let _ = cycle_menu.append(&item);
+    }
+    let _ = menu.append(&cycle_menu);
+
+    let _ = menu.append(&PredefinedMenuItem::separator());
+    let _ = menu.append(&MenuItem::with_id(
+        "hotkey_status",
+        format!("Hotkey: {}", config.hotkey),
+        false,
+        None,
+    ));
+    let _ = menu.append(&MenuItem::with_id("set_hotkey", "Set Hotkey…", true, None));
+    let _ = menu.append(&PredefinedMenuItem::separator());
     let _ = menu.append(&MenuItem::with_id(
         "rescan",
         "Reload Config && Rescan Monitor",
@@ -79,6 +103,10 @@ fn parse_input_id(id: &str) -> Option<usize> {
     id.strip_prefix("input:")?.parse().ok()
 }
 
+fn parse_toggle_id(id: &str) -> Option<usize> {
+    id.strip_prefix("toggle:")?.parse().ok()
+}
+
 fn register_hotkey(manager: &GlobalHotKeyManager, previous: &mut Option<HotKey>, hotkey_str: &str) {
     if let Some(prev) = previous.take() {
         let _ = manager.unregister(prev);
@@ -89,6 +117,68 @@ fn register_hotkey(manager: &GlobalHotKeyManager, previous: &mut Option<HotKey>,
             Err(err) => eprintln!("Failed to register hotkey \"{hotkey_str}\": {err}"),
         },
         Err(err) => eprintln!("Invalid hotkey \"{hotkey_str}\" in config: {err}"),
+    }
+}
+
+fn is_modifier_keycode(key: KeyCode) -> bool {
+    matches!(
+        key,
+        KeyCode::ShiftLeft
+            | KeyCode::ShiftRight
+            | KeyCode::ControlLeft
+            | KeyCode::ControlRight
+            | KeyCode::AltLeft
+            | KeyCode::AltRight
+            | KeyCode::SuperLeft
+            | KeyCode::SuperRight
+            | KeyCode::CapsLock
+            | KeyCode::NumLock
+            | KeyCode::ScrollLock
+            | KeyCode::Fn
+            | KeyCode::FnLock
+    )
+}
+
+/// tao's `KeyCode` and global-hotkey's `Code` are separate enums that both mirror the
+/// UI Events `KeyboardEvent.code` spec with identical variant names, so a plain Debug
+/// round-trip (e.g. "KeyI", "Digit1") maps one to the other without a manual table.
+fn physical_key_to_hotkey_code(key: KeyCode) -> Option<Code> {
+    format!("{key:?}").parse().ok()
+}
+
+fn modifiers_from_tao(state: ModifiersState) -> Modifiers {
+    let mut mods = Modifiers::empty();
+    if state.shift_key() {
+        mods |= Modifiers::SHIFT;
+    }
+    if state.control_key() {
+        mods |= Modifiers::CONTROL;
+    }
+    if state.alt_key() {
+        mods |= Modifiers::ALT;
+    }
+    if state.super_key() {
+        mods |= Modifiers::SUPER;
+    }
+    mods
+}
+
+fn open_hotkey_capture_window<T: 'static>(target: &tao::event_loop::EventLoopWindowTarget<T>) -> Option<Window> {
+    match WindowBuilder::new()
+        .with_title("Press the new hotkey… (Esc to cancel)")
+        .with_inner_size(LogicalSize::new(420.0, 90.0))
+        .with_resizable(false)
+        .with_always_on_top(true)
+        .build(target)
+    {
+        Ok(window) => {
+            window.set_focus();
+            Some(window)
+        }
+        Err(err) => {
+            eprintln!("Failed to open hotkey capture window: {err:#}");
+            None
+        }
     }
 }
 
@@ -137,8 +227,10 @@ fn main() {
     let mut monitor_error = monitor.is_none().then(|| "No monitor found".to_string());
 
     let mut tray: Option<TrayIcon> = None;
+    let mut hotkey_capture: Option<Window> = None;
+    let mut capture_mods = Modifiers::empty();
 
-    event_loop.run(move |event, _target, control_flow| {
+    event_loop.run(move |event, target, control_flow| {
         *control_flow = ControlFlow::Wait;
 
         if let Event::NewEvents(tao::event::StartCause::Init) = event {
@@ -154,6 +246,48 @@ fn main() {
             return;
         }
 
+        if let Event::WindowEvent { window_id, event: win_event, .. } = &event {
+            let is_capture_window = hotkey_capture.as_ref().is_some_and(|w| w.id() == *window_id);
+            if is_capture_window {
+                match win_event {
+                    WindowEvent::ModifiersChanged(state) => {
+                        capture_mods = modifiers_from_tao(*state);
+                    }
+                    WindowEvent::KeyboardInput { event: key_event, is_synthetic: false, .. }
+                        if key_event.state == ElementState::Pressed =>
+                    {
+                        if key_event.physical_key == KeyCode::Escape {
+                            register_hotkey(&hotkey_manager, &mut registered_hotkey, &config.hotkey);
+                            hotkey_capture = None;
+                        } else if !is_modifier_keycode(key_event.physical_key) {
+                            if let Some(code) = physical_key_to_hotkey_code(key_event.physical_key) {
+                                if capture_mods.is_empty() {
+                                    eprintln!("Hotkey needs at least one modifier key (Ctrl/Alt/Shift/Cmd)");
+                                } else {
+                                    let new_hotkey = HotKey::new(Some(capture_mods), code);
+                                    config.hotkey = new_hotkey.to_string();
+                                    if let Err(err) = config.save() {
+                                        eprintln!("Failed to save config: {err:#}");
+                                    }
+                                    register_hotkey(&hotkey_manager, &mut registered_hotkey, &config.hotkey);
+                                    if let Some(t) = tray.as_ref() {
+                                        refresh(t, &config, &mut monitor, &mut monitor_error);
+                                    }
+                                    hotkey_capture = None;
+                                }
+                            }
+                        }
+                    }
+                    WindowEvent::CloseRequested => {
+                        register_hotkey(&hotkey_manager, &mut registered_hotkey, &config.hotkey);
+                        hotkey_capture = None;
+                    }
+                    _ => {}
+                }
+            }
+            return;
+        }
+
         let Event::UserEvent(user_event) = event else { return };
         let Some(tray) = tray.as_ref() else { return };
 
@@ -163,12 +297,17 @@ fn main() {
                     return;
                 }
                 if let Some(m) = monitor.as_mut() {
-                    let current = m.current_input().ok();
-                    let next = match current.and_then(|c| config.inputs.iter().position(|i| i.code == c)) {
-                        Some(pos) => config.inputs.get((pos + 1) % config.inputs.len()),
-                        None => config.inputs.first(),
-                    };
-                    if let Some(next) = next {
+                    let cycle: Vec<_> = config.inputs.iter().filter(|i| i.enabled).collect();
+                    if let Some(next) = if cycle.is_empty() {
+                        None
+                    } else {
+                        let current = m.current_input().ok();
+                        let pos = current.and_then(|c| cycle.iter().position(|i| i.code == c));
+                        Some(match pos {
+                            Some(pos) => cycle[(pos + 1) % cycle.len()],
+                            None => cycle[0],
+                        })
+                    } {
                         if let Err(err) = m.set_input(next.code) {
                             eprintln!("{err:#}");
                             monitor_error = Some(err.to_string());
@@ -209,6 +348,18 @@ fn main() {
                             let _ = open_in_default_app(&path);
                         }
                     }
+                    "set_hotkey" => {
+                        if hotkey_capture.is_none() {
+                            // The old hotkey is still globally registered at this point, so
+                            // pressing it while the capture window is focused would otherwise
+                            // deliver a WM_HOTKEY to the OS instead of a normal key event here.
+                            if let Some(prev) = registered_hotkey.take() {
+                                let _ = hotkey_manager.unregister(prev);
+                            }
+                            capture_mods = Modifiers::empty();
+                            hotkey_capture = open_hotkey_capture_window(target);
+                        }
+                    }
                     other => {
                         if let Some(index) = parse_input_id(other) {
                             if let (Some(input), Some(m)) = (config.inputs.get(index), monitor.as_mut()) {
@@ -217,6 +368,14 @@ fn main() {
                                     monitor_error = Some(err.to_string());
                                 } else {
                                     monitor_error = None;
+                                }
+                                refresh(tray, &config, &mut monitor, &mut monitor_error);
+                            }
+                        } else if let Some(index) = parse_toggle_id(other) {
+                            if let Some(input) = config.inputs.get_mut(index) {
+                                input.enabled = !input.enabled;
+                                if let Err(err) = config.save() {
+                                    eprintln!("Failed to save config: {err:#}");
                                 }
                                 refresh(tray, &config, &mut monitor, &mut monitor_error);
                             }

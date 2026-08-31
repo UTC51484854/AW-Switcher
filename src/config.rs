@@ -8,6 +8,14 @@ pub struct InputSource {
     pub name: String,
     /// DDC/CI VCP 0x60 input source value, e.g. 0x11 for HDMI-1.
     pub code: u16,
+    /// Whether the hotkey's cycle includes this input. Disabled inputs are
+    /// skipped by the hotkey but can still be switched to from the tray menu.
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+}
+
+fn default_enabled() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,14 +40,14 @@ impl Default for Config {
             // (10Gbps upstream, DisplayPort 2.1 Alt Mode) — no second
             // DisplayPort input.
             inputs: vec![
-                InputSource { name: "HDMI 1".into(), code: 0x11 },
-                InputSource { name: "HDMI 2".into(), code: 0x12 },
-                InputSource { name: "DisplayPort".into(), code: 0x0f },
+                InputSource { name: "HDMI 1".into(), code: 0x11, enabled: true },
+                InputSource { name: "HDMI 2".into(), code: 0x12, enabled: true },
+                InputSource { name: "DisplayPort".into(), code: 0x0f, enabled: true },
                 // Dell's vendor-specific code for "DisplayPort over USB-C" on
                 // other Dell/Alienware monitors (e.g. the U3818DW). Not yet
                 // confirmed against the AW3926QW specifically — if switching
                 // to it does nothing, check `ddcutil capabilities` and adjust.
-                InputSource { name: "USB-C".into(), code: 0x1b },
+                InputSource { name: "USB-C".into(), code: 0x1b, enabled: true },
             ],
         }
     }
@@ -71,5 +79,16 @@ impl Config {
         let text = fs::read_to_string(&path)
             .with_context(|| format!("Failed to read config at {}", path.display()))?;
         toml::from_str(&text).with_context(|| format!("Failed to parse config at {}", path.display()))
+    }
+
+    /// Writes this config to disk, creating the config directory if needed.
+    pub fn save(&self) -> Result<()> {
+        let path = Self::path()?;
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create config directory {}", parent.display()))?;
+        }
+        fs::write(&path, toml::to_string_pretty(self)?)
+            .with_context(|| format!("Failed to write config to {}", path.display()))
     }
 }
