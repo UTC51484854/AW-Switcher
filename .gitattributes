@@ -1,0 +1,7 @@
+# Normalize line endings for everyone; Git stores LF internally and checks
+# out using each platform's core.autocrlf setting unless overridden below.
+* text=auto
+
+# Shell scripts must always check out with LF — a CRLF shebang line breaks
+# execution on macOS/Linux, which a Windows checkout would otherwise cause.
+*.sh text eol=lf
