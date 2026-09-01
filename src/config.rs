@@ -18,6 +18,10 @@ fn default_enabled() -> bool {
     true
 }
 
+fn default_open_at_login() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -27,6 +31,10 @@ pub struct Config {
     /// Case-insensitive substring matched against a display's model name,
     /// used to pick the right monitor when more than one is connected.
     pub monitor_match: String,
+    /// Whether the app registers itself to launch at login. Defaults to on;
+    /// toggled via the tray menu's "Open at Login" checkbox.
+    #[serde(default = "default_open_at_login")]
+    pub open_at_login: bool,
     /// Inputs to cycle through, in order, when the hotkey is pressed.
     pub inputs: Vec<InputSource>,
 }
@@ -36,6 +44,7 @@ impl Default for Config {
         Config {
             hotkey: "CmdOrCtrl+Alt+I".into(),
             monitor_match: "AW3926".into(),
+            open_at_login: true,
             // The AW3926QW has 2x HDMI, 1x DisplayPort 2.1, and 1x USB-C
             // (10Gbps upstream, DisplayPort 2.1 Alt Mode) — no second
             // DisplayPort input.

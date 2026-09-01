@@ -21,8 +21,11 @@ Builds a release binary and wraps it in `target/release/AW Switcher.app` —
 a normal double-clickable app, not something that needs a terminal open.
 Drag it to `/Applications`. Since it isn't notarized by an Apple Developer
 ID, the first launch needs a right-click → **Open** (plain double-click
-gets a flat refusal from Gatekeeper the first time only). To have it start
-automatically: **System Settings → General → Login Items**, add it there.
+gets a flat refusal from Gatekeeper the first time only).
+
+The app opens at login by default (a `~/Library/LaunchAgents` entry on
+macOS, a per-user registry entry on Windows) — uncheck **Open at Login**
+in the tray menu to turn that off.
 
 It's a menu-bar-only app — no Dock icon, nothing in Cmd+Tab; look for the
 small monitor icon in the menu bar.
@@ -55,6 +58,7 @@ Config lives at:
 ```toml
 hotkey = "CmdOrCtrl+Alt+I"
 monitor_match = "AW3926"
+open_at_login = true
 
 [[inputs]]
 name = "HDMI 1"
@@ -85,6 +89,11 @@ DisplayPort 2.1, and 1x USB-C (10Gbps upstream, DisplayPort 2.1 Alt Mode).
   connected display's model name. Only used to pick the right monitor when
   more than one DDC/CI display is connected; if only one is found, it's
   used regardless of this setting.
+- **`open_at_login`** — whether the app registers itself to launch at
+  login (a LaunchAgent on macOS, a per-user registry Run entry on
+  Windows). Also toggleable from the tray menu's **Open at Login**
+  checkbox, which updates this and re-syncs the OS registration
+  immediately.
 - **`inputs`** — the list you cycle through with the hotkey, and that shows
   up (with a checkmark on the active one) in the tray menu for switching
   directly. `code` is the VCP `0x60` input value; standard MCCS values are

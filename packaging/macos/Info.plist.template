@@ -10,6 +10,8 @@
 	<string>dev.aw-switcher.app</string>
 	<key>CFBundleExecutable</key>
 	<string>aw-switcher</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

@@ -1,5 +1,10 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
+use auto_launch::{AutoLaunch, AutoLaunchBuilder};
+#[cfg(target_os = "macos")]
+use auto_launch::MacOSLaunchMode;
+#[cfg(target_os = "windows")]
+use auto_launch::WindowsEnableMode;
 use aw_switcher::{config::Config, icon, monitor::Monitor};
 use global_hotkey::{
     hotkey::{Code, HotKey, Modifiers},
@@ -74,6 +79,13 @@ fn build_menu(config: &Config, current: Option<u16>, monitor_error: Option<&str>
         None,
     ));
     let _ = menu.append(&MenuItem::with_id("open_config", "Open Config File", true, None));
+    let _ = menu.append(&CheckMenuItem::with_id(
+        "open_at_login",
+        "Open at Login",
+        true,
+        config.open_at_login,
+        None,
+    ));
     let _ = menu.append(&PredefinedMenuItem::separator());
     let _ = menu.append(&MenuItem::with_id("quit", "Quit", true, None));
 
@@ -105,6 +117,48 @@ fn parse_input_id(id: &str) -> Option<usize> {
 
 fn parse_toggle_id(id: &str) -> Option<usize> {
     id.strip_prefix("toggle:")?.parse().ok()
+}
+
+/// Builds the auto-launch handle for the current platform: a LaunchAgent
+/// plist on macOS, a per-user registry Run entry on Windows. Both point
+/// directly at whatever executable is currently running, so this also
+/// works (harmlessly) from a `cargo run` dev build.
+fn build_auto_launch() -> Option<AutoLaunch> {
+    let exe = match std::env::current_exe() {
+        Ok(path) => path,
+        Err(err) => {
+            eprintln!("Failed to determine executable path for auto-launch: {err:#}");
+            return None;
+        }
+    };
+    let exe = exe.to_string_lossy().into_owned();
+
+    let mut builder = AutoLaunchBuilder::new();
+    builder.set_app_name("AW Switcher");
+    builder.set_app_path(&exe);
+    #[cfg(target_os = "macos")]
+    builder.set_macos_launch_mode(MacOSLaunchMode::LaunchAgent);
+    #[cfg(target_os = "windows")]
+    builder.set_windows_enable_mode(WindowsEnableMode::CurrentUser);
+
+    match builder.build() {
+        Ok(auto) => Some(auto),
+        Err(err) => {
+            eprintln!("Failed to configure auto-launch: {err:#}");
+            None
+        }
+    }
+}
+
+/// Makes the OS-level auto-launch registration match `enabled`. Called on
+/// every startup (so it self-heals if the LaunchAgent/registry entry was
+/// removed out-of-band) and whenever the tray checkbox is toggled.
+fn sync_auto_launch(auto: &AutoLaunch, enabled: bool) {
+    let result = if enabled { auto.enable() } else { auto.disable() };
+    if let Err(err) = result {
+        let verb = if enabled { "enable" } else { "disable" };
+        eprintln!("Failed to {verb} open-at-login: {err:#}");
+    }
 }
 
 fn register_hotkey(manager: &GlobalHotKeyManager, previous: &mut Option<HotKey>, hotkey_str: &str) {
@@ -216,6 +270,11 @@ fn main() {
         }
     };
     register_hotkey(&hotkey_manager, &mut registered_hotkey, &config.hotkey);
+
+    let auto_launch = build_auto_launch();
+    if let Some(auto) = &auto_launch {
+        sync_auto_launch(auto, config.open_at_login);
+    }
 
     let mut monitor = match Monitor::find(&config.monitor_match) {
         Ok(m) => Some(m),
@@ -331,6 +390,9 @@ fn main() {
                             }
                         };
                         register_hotkey(&hotkey_manager, &mut registered_hotkey, &config.hotkey);
+                        if let Some(auto) = &auto_launch {
+                            sync_auto_launch(auto, config.open_at_login);
+                        }
                         monitor = match Monitor::find(&config.monitor_match) {
                             Ok(m) => {
                                 monitor_error = None;
@@ -347,6 +409,16 @@ fn main() {
                         if let Ok(path) = Config::path() {
                             let _ = open_in_default_app(&path);
                         }
+                    }
+                    "open_at_login" => {
+                        config.open_at_login = !config.open_at_login;
+                        if let Err(err) = config.save() {
+                            eprintln!("Failed to save config: {err:#}");
+                        }
+                        if let Some(auto) = &auto_launch {
+                            sync_auto_launch(auto, config.open_at_login);
+                        }
+                        refresh(tray, &config, &mut monitor, &mut monitor_error);
                     }
                     "set_hotkey" => {
                         if hotkey_capture.is_none() {
