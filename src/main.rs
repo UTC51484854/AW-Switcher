@@ -366,7 +366,15 @@ fn main() {
 
         match user_event {
             UserEvent::HotKey(event) => {
-                if event.state != global_hotkey::HotKeyState::Pressed {
+                // Switch on release, not press: on press, every key in the
+                // combo is still guaranteed to be physically held, which is
+                // the worst moment for a KVM monitor to cut the keyboard's
+                // USB connection over to the other machine — a modifier
+                // still down at that instant is what leaves the OS on the
+                // receiving end thinking it's stuck. Waiting for release
+                // gives the user's fingers a head start on lifting off
+                // before the switch actually happens.
+                if event.state != global_hotkey::HotKeyState::Released {
                     return;
                 }
                 if let Some(m) = monitor.as_mut() {
