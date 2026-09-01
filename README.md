@@ -107,7 +107,13 @@ DisplayPort 2.1, and 1x USB-C (10Gbps upstream, DisplayPort 2.1 Alt Mode).
   what it actually advertises for feature `60`.
 
 Use the tray menu's **Reload Config & Rescan Monitor** item to pick up
-changes without restarting.
+config changes without restarting.
+
+The tray menu also re-reads the monitor's actual current input every few
+seconds in the background, so if something other than this app's own
+hotkey/menu changes it — a KVM-style setup where another machine (or the
+monitor's OSD) switches the shared DDC/CI bus — the menu catches up on
+its own shortly after, without needing a manual rescan.
 
 ## Troubleshooting
 

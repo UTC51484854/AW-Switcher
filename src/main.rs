@@ -10,6 +10,7 @@ use global_hotkey::{
     hotkey::{Code, HotKey, Modifiers},
     GlobalHotKeyEvent, GlobalHotKeyManager,
 };
+use std::time::{Duration, Instant};
 use tao::dpi::LogicalSize;
 use tao::event::{ElementState, Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
@@ -21,6 +22,12 @@ use tray_icon::{
     menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu},
     TrayIcon, TrayIconBuilder, TrayIconEvent,
 };
+
+/// How often to re-read the monitor's current input in the background.
+/// Needed because the input can change from outside this process entirely
+/// — a KVM-style setup where another machine (or the monitor's own OSD)
+/// switches the shared DDC/CI bus — which this process has no event for.
+const POLL_INTERVAL: Duration = Duration::from_secs(3);
 
 enum UserEvent {
     Tray,
@@ -290,7 +297,7 @@ fn main() {
     let mut capture_mods = Modifiers::empty();
 
     event_loop.run(move |event, target, control_flow| {
-        *control_flow = ControlFlow::Wait;
+        *control_flow = ControlFlow::WaitUntil(Instant::now() + POLL_INTERVAL);
 
         if let Event::NewEvents(tao::event::StartCause::Init) = event {
             let built = TrayIconBuilder::new()
@@ -302,6 +309,13 @@ fn main() {
                 .expect("failed to create tray icon");
             refresh(&built, &config, &mut monitor, &mut monitor_error);
             tray = Some(built);
+            return;
+        }
+
+        if let Event::NewEvents(tao::event::StartCause::ResumeTimeReached { .. }) = event {
+            if let Some(t) = tray.as_ref() {
+                refresh(t, &config, &mut monitor, &mut monitor_error);
+            }
             return;
         }
 
